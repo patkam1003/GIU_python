@@ -2,24 +2,25 @@ import PySimpleGUI as sg
 import re
 import serial
 from terminal import *
-import time
+import os, time, datetime
 import threading
+import pathlib
+
+"""
+czy flaga może być zmienna globalna, w jaki sposób zrobić czytanie czasu
+
+ogarnąc argumanty funkcji 
+>>> ctime = datetime.datetime.fromtimestamp(fname.stat().st_ctime)
+>>> print(ctime)
+datetime.datetime(2018, 4, 11, 16, 57, 52, 151953)
+
+"""
+
 
 THREAD_EVENT = '-THREAD-'
+#OPEN_FILE_KEY = '-open_file_key-'
 
 
-
-def the_thread(window):
-    """
-    The thread that communicates with the application through the window's events.
-
-    Once a second wakes and sends a new event and associated value to the window
-    """
-    i = 0
-    while True:
-        time.sleep(1)
-        window.write_event_value('-THREAD-', (threading.current_thread().name, i))      # Data sent is a tuple of thread name and counter
-        i += 1
 
 
 sg.theme('DarkAmber')   # Add a touch of color
@@ -56,6 +57,46 @@ flash_file_content = ""
 info_output = ""
 cpu_flash_size = 0
 page_size = 0
+flag = 0
+
+
+def load_file(window, values):
+    global flag
+    global flash_file_content
+    try:
+        window['-in_file_text-'].update('')
+        reader = open(values["-open_file_key-"], "r")
+        contents = reader.readlines()
+        flash_file_content = ""
+        for line in contents:
+            flash_file_content = flash_file_content + re.search(r':.{8}(.*)..', line).group(1)
+
+        window['-in_file_text-'].update(flash_file_content)
+        window['-in_file_size-'].update(str(len(flash_file_content) // 2) + " kB")
+        print(len(flash_file_content))
+        reader.close()
+        flag = 0
+    except:
+        print("test")
+
+
+def the_thread(window, values):
+    fname = pathlib.Path(values["-open_file_key-"])
+    global flag
+    date_start = datetime.datetime.fromtimestamp(fname.stat().st_mtime)
+    while True:
+        time.sleep(1)
+        print("thread")
+        if date_start != (datetime.datetime.fromtimestamp(fname.stat().st_mtime)):
+            flag = 1
+            date_start = datetime.datetime.fromtimestamp(fname.stat().st_mtime)
+            print("thread2")
+
+        if flag == 1:
+            load_file(window, values)
+            print("ok")
+
+
 
 def read_info(window, values):
     print(values['-combo_port-'])
@@ -239,6 +280,16 @@ def upload_program(window, values):
                             data_ack = 1
                             print(data_ack)
                             timeout_start_time = int(round(time.time()))
+                            #zakonczenie ladowania
+                            if data_sent_cnt >= file_size:
+                                # print("out", serial_instance.out_waiting)
+                                # while serial_instance.out_waiting >0:
+                                #     print("teeeest")
+                                #     pass
+                                time.sleep(2)
+                                window['-out_info-'].update("DONE")
+                                serial_instance.close()
+                                return
                     except:
                         print("dupa")
 
@@ -255,15 +306,15 @@ def upload_program(window, values):
                         print("wyslano")
 
                         data_sent_cnt += page_size*2
-                        if data_sent_cnt >= file_size:
-                            # print("out", serial_instance.out_waiting)
-                            # while serial_instance.out_waiting >0:
-                            #     print("teeeest")
-                            #     pass
-                            time.sleep(2)
-                            window['-out_info-'].update("DONE")
-                            serial_instance.close()
-                            return
+                        # if data_sent_cnt >= file_size:
+                        #     # print("out", serial_instance.out_waiting)
+                        #     # while serial_instance.out_waiting >0:
+                        #     #     print("teeeest")
+                        #     #     pass
+                        #     time.sleep(2)
+                        #     window['-out_info-'].update("DONE")
+                        #     serial_instance.close()
+                        #     return
 
                         
                         print("data_sent_cnt", data_sent_cnt)
@@ -304,6 +355,7 @@ def main():
     global flash_file_content
     global page_size
     global cpu_flash_size
+    global flag
     flash_file_content = ""
     com_port_uchwyt = None
     miniterminal = None
@@ -314,21 +366,7 @@ def main():
         if event == sg.WIN_CLOSED: # if user closes window or clicks cancel
             break
 
-        elif event == "-open_file_key-":
-            try:
-                reader = open(values["-open_file_key-"],"r")
-                contents =reader.readlines()
-                flash_file_content = ""
-                for line in contents:
-                    flash_file_content = flash_file_content+re.search(r':.{8}(.*)..', line).group(1)
-
-                window['-in_file_text-'].update(flash_file_content)
-                window['-in_file_size-'].update(str(len(flash_file_content)//2)+" kB")
-                print(len(flash_file_content))
-                reader.close()
-            except:
-                print("test")
-            
+        #elif event == '-open_file_key-':
 
         elif event == "-combo_port-":
             print("dupa")
@@ -340,10 +378,13 @@ def main():
             read_info(window, values)
             upload_program(window, values)
 
-        if event == THREAD_EVENT:
-            pass
+        if event == '-open_file_key-':
+            load_file(window, values)
+            threading.Thread(target=the_thread, args=(window, values,), daemon=True).start()
 
-
+        # if flag == 1:
+        #     load_file(window, values)
+        #     print("ok")
     window.close()
 
 
