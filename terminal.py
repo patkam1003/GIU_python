@@ -400,6 +400,16 @@ def ask_for_port():
         ports.append(port)
     return ports
 
+
+def ask_for_desc(com_name):
+
+      for n, (port, desc, hwid) in enumerate(sorted(comports()), 1):
+        if port == com_name:
+            return desc
+
+
+
+
 class Miniterm(object):
     """\
     Terminal application. Copy data from serial port to console and vice versa.

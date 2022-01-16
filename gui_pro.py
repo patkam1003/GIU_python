@@ -5,6 +5,7 @@ from terminal import *
 import os, time, datetime
 import threading
 import pathlib
+from sys import platform
 
 """
 czy flaga może być zmienna globalna, w jaki sposób zrobić czytanie czasu
@@ -35,7 +36,8 @@ col1 = [
 
 
 col2 = [
-        [sg.Text('Port'),sg.InputCombo(values=ask_for_port(), size=(10, 1),key="-combo_port-",enable_events = True), sg.Text('Baud'),sg.InputCombo(('9600', '19200', '38400','115200'), size=(10, 1),key="-combo_baud-", default_value = '9600')],
+        [sg.Text('Port'), sg.InputCombo(values=ask_for_port(), size=(10, 1), key="-combo_port-",enable_events = True), sg.Text('Baud'),sg.InputCombo(('9600', '19200', '38400','115200'), size=(10, 1),key="-combo_baud-", default_value = '9600')],
+        [sg.Text('COM: ', key="-COM_name-")],
         [sg.Checkbox('AT+RST?', size=(10,1),key="-checkbox_RST-"),  sg.Checkbox('Test')],
         [sg.Frame(layout=[
             [sg.Button('Info' , key="-info_key-"),sg.Button('Upload' , key="-upload_key-")],
@@ -86,15 +88,21 @@ def the_thread(window, values):
     date_start = datetime.datetime.fromtimestamp(fname.stat().st_mtime)
     while True:
         time.sleep(1)
-        print("thread")
-        if date_start != (datetime.datetime.fromtimestamp(fname.stat().st_mtime)):
-            flag = 1
-            date_start = datetime.datetime.fromtimestamp(fname.stat().st_mtime)
-            print("thread2")
+
+        if platform == "linux" or platform == "linux2":
+            if date_start != (datetime.datetime.fromtimestamp(fname.stat().st_mtime)):
+                flag = 1
+                date_start = datetime.datetime.fromtimestamp(fname.stat().st_mtime)
+
+        elif platform == "win32":
+            if date_start != (datetime.datetime.fromtimestamp(fname.stat().st_mtime)):
+                flag = 1
+                date_start = datetime.datetime.fromtimestamp(fname.stat().st_mtime)
 
         if flag == 1:
             load_file(window, values)
-            print("ok")
+
+# def the_thread_upload(window, values):
 
 
 
@@ -127,10 +135,9 @@ def read_info(window, values):
 
     #oczekiwanie na znak zapytania z procesora 
 
-    if values['-checkbox_RST-'] == True:
+    if values['-checkbox_RST-']:
         serial_instance.write(b'AT+RST?\r\n')
         serial_instance.reset_input_buffer()
-
 
     timeout_start_time = int(round(time.time()))
     while True:   
@@ -141,7 +148,7 @@ def read_info(window, values):
             input_raw_data =  input_raw_data + data.decode("utf-8")
             try:
                 data_table = re.search(r'.*\?.*', input_raw_data)
-                if data_table != None:
+                if data_table:
                     data_ack = 1
                     print(data_ack)
                     
@@ -272,7 +279,7 @@ def upload_program(window, values):
                 print(data, type(data))
                 input_raw_data = ""
                 if data:
-                    input_raw_data =  input_raw_data + data.decode("utf-8") #str(data)
+                    input_raw_data = input_raw_data + data.decode("utf-8") # str(data)
                     print(input_raw_data)
                     try:
                         data_table = re.search(r'.*@.*', input_raw_data)
@@ -287,7 +294,7 @@ def upload_program(window, values):
                                 #     print("teeeest")
                                 #     pass
                                 time.sleep(2)
-                                window['-out_info-'].update("DONE")
+                                window['-out_info-'].print("\r\nDONE")
                                 serial_instance.close()
                                 return
                     except:
@@ -304,6 +311,7 @@ def upload_program(window, values):
                         print("Page ," ,page)
                         serial_instance.write(bytearray.fromhex(page))
                         print("wyslano")
+                        window['-out_info-'].print(".", end='')
 
                         data_sent_cnt += page_size*2
                         # if data_sent_cnt >= file_size:
@@ -316,7 +324,6 @@ def upload_program(window, values):
                         #     serial_instance.close()
                         #     return
 
-                        
                         print("data_sent_cnt", data_sent_cnt)
 
 
@@ -369,14 +376,16 @@ def main():
         #elif event == '-open_file_key-':
 
         elif event == "-combo_port-":
-            print("dupa")
+            window['-COM_name-'].update("COM: " + ask_for_desc(values["-combo_port-"]))
+
 
         elif event == "-info_key-":
             read_info(window, values)
             #print(cpu_flash_size, page_size)
         elif event == "-upload_key-":
             read_info(window, values)
-            upload_program(window, values)
+            threading.Thread(target=upload_program, args=(window, values,), daemon=True).start()
+            # upload_program(window, values)
 
         if event == '-open_file_key-':
             load_file(window, values)
