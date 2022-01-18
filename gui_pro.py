@@ -7,15 +7,7 @@ import threading
 import pathlib
 from sys import platform
 
-"""
-czy flaga może być zmienna globalna, w jaki sposób zrobić czytanie czasu
 
-ogarnąc argumanty funkcji 
->>> ctime = datetime.datetime.fromtimestamp(fname.stat().st_ctime)
->>> print(ctime)
-datetime.datetime(2018, 4, 11, 16, 57, 52, 151953)
-
-"""
 
 
 THREAD_EVENT = '-THREAD-'
@@ -60,7 +52,7 @@ info_output = ""
 cpu_flash_size = 0
 page_size = 0
 flag = 0
-
+thread_lock = False
 
 def load_file(window, values):
     global flag
@@ -139,13 +131,14 @@ def read_info(window, values):
         serial_instance.write(b'AT+RST?\r\n')
         serial_instance.reset_input_buffer()
 
+    data_ack = 0
     timeout_start_time = int(round(time.time()))
     while True:   
         data = serial_instance.read(serial_instance.in_waiting or 1)
         print(data, type(data))
         input_raw_data = ""
         if data:
-            input_raw_data =  input_raw_data + data.decode("utf-8")
+            input_raw_data =  input_raw_data + data.decode("utf-8",errors='ignore')
             try:
                 data_table = re.search(r'.*\?.*', input_raw_data)
                 if data_table:
@@ -222,9 +215,6 @@ def read_info(window, values):
     except:
         print("dupa blada")
     serial_instance.close()
-
-
-
 
 def upload_program(window, values):
     global flash_file_content
@@ -352,7 +342,16 @@ def upload_program(window, values):
         return
 
 
+def read_upload(window, values):
+    global thread_lock
+    read_info(window, values)
+    upload_program(window, values)
+    thread_lock = False
 
+def read_threading(window, values):
+    global thread_lock
+    read_info(window, values)
+    thread_lock = False
    
 
 
@@ -363,9 +362,11 @@ def main():
     global page_size
     global cpu_flash_size
     global flag
+    global thread_lock
     flash_file_content = ""
     com_port_uchwyt = None
     miniterminal = None
+    
     # Event Loop to process "events" and get the "values" of the inputs
     while True:
         event, values = window.read()
@@ -380,11 +381,21 @@ def main():
 
 
         elif event == "-info_key-":
-            read_info(window, values)
+            # read_info(window, values)
+            if thread_lock == False:
+                thread_lock = True
+                threading.Thread(target=read_threading, args=(window, values,), daemon=True).start()
+                print("tthread_info")
+            else:
+                print("thread_true_info")
             #print(cpu_flash_size, page_size)
         elif event == "-upload_key-":
-            read_info(window, values)
-            threading.Thread(target=upload_program, args=(window, values,), daemon=True).start()
+            if thread_lock == False:
+                thread_lock = True
+                threading.Thread(target=read_upload, args=(window, values,), daemon=True).start()
+                print("tthread")
+            else:
+                print("thread_true")
             # upload_program(window, values)
 
         if event == '-open_file_key-':
