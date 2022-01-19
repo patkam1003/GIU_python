@@ -6,11 +6,13 @@ import os, time, datetime
 import threading
 import pathlib
 from sys import platform
+import sys
+import getopt 
 
 
 
 
-THREAD_EVENT = '-THREAD-'
+#THREAD_EVENT = '-THREAD-'
 #OPEN_FILE_KEY = '-open_file_key-'
 
 
@@ -54,16 +56,28 @@ page_size = 0
 flag = 0
 thread_lock = False
 
-def load_file(window, values):
+
+def load_file(filename):
+    reader = open(filename, "r")
+    contents = reader.readlines()
+    flash_file_content = ""
+    for line in contents:
+        flash_file_content = flash_file_content + re.search(r':.{8}(.*)..', line).group(1)
+
+    return flash_file_content
+
+def load_file_window(window, values):
     global flag
     global flash_file_content
     try:
         window['-in_file_text-'].update('')
-        reader = open(values["-open_file_key-"], "r")
-        contents = reader.readlines()
-        flash_file_content = ""
-        for line in contents:
-            flash_file_content = flash_file_content + re.search(r':.{8}(.*)..', line).group(1)
+        filename = values["-open_file_key-"]
+        flash_file_content = load_file(filename)
+        # reader = open(filename, "r")
+        # contents = reader.readlines()
+        # flash_file_content = ""
+        # for line in contents:
+        #     flash_file_content = flash_file_content + re.search(r':.{8}(.*)..', line).group(1)
 
         window['-in_file_text-'].update(flash_file_content)
         window['-in_file_size-'].update(str(len(flash_file_content) // 2) + " kB")
@@ -72,6 +86,9 @@ def load_file(window, values):
         flag = 0
     except:
         print("test")
+
+
+
 
 
 def the_thread(window, values):
@@ -96,17 +113,15 @@ def the_thread(window, values):
 
 # def the_thread_upload(window, values):
 
-
-
-def read_info(window, values):
-    print(values['-combo_port-'])
-    if values['-combo_port-'] == "":
-        window['-out_info-'].update("Wybierz port COM")
-        return
+def read_info(com, baud, rst, window = None, values = None, ui_en = False):
+    #print(values['-combo_port-'])
+    # if values['-combo_port-'] == "":
+    #     window['-out_info-'].update("Wybierz port COM")
+    #     return
     try:
         serial_instance = serial.serial_for_url(
-            values['-combo_port-'],
-            int(values['-combo_baud-']),
+            com,
+            int(baud),
             parity="N",
             rtscts=False,
             xonxoff=False,
@@ -122,12 +137,13 @@ def read_info(window, values):
         serial_instance.open()
         print("debug3")
     except serial.SerialException as e:
-        sys.stderr.write('could not open port {!r}: {}\n'.format(values['-combo_port-'], e))
-        window['-out_info-'].update("Nie mozna otworzyc portu COM")
+        sys.stderr.write('could not open port {!r}: {}\n'.format(com, e))
+        if ui_en:
+            window['-out_info-'].update("Nie mozna otworzyc portu COM")
 
     #oczekiwanie na znak zapytania z procesora 
 
-    if values['-checkbox_RST-']:
+    if rst:
         serial_instance.write(b'AT+RST?\r\n')
         serial_instance.reset_input_buffer()
 
@@ -157,11 +173,14 @@ def read_info(window, values):
                     serial_instance.write(b'i')
                     break
                 except:
-                    window['-out_info-'].update("Problem z połączeniem")
+                    if ui_en:
+                        window['-out_info-'].update("Problem z połączeniem")
+
                     serial_instance.close()
                     return
         if (int(round(time.time())) - timeout_start_time) > 10:
-            window['-out_info-'].update("Brak danych BLS")
+            if ui_en:
+                window['-out_info-'].update("Brak danych BLS")
             serial_instance.close()
             break
 
@@ -190,31 +209,161 @@ def read_info(window, values):
                         info_output = info_output + "CPU name: " + str(data_table.group(3)) + "\n"
                         info_output = info_output + "CPU frequency: " + str(data_table.group(4)) + "\n"
                         info_output = info_output + "BLS Version: " + str(data_table.group(5)) + "\n"
-                        window['-out_info-'].update(info_output)
+                        if ui_en:
+                            window['-out_info-'].update(info_output)
+
                         serial_instance.close()
                         cpu_flash_size = int(data_table.group(2), 16)
                         page_size = int(data_table.group(1))
-                        break
+                        return info_output
                 except:
-                    window['-out_info-'].update("Niepoprawne dane BLS")
+                    if ui_en:
+                        window['-out_info-'].update("Niepoprawne dane BLS")
                     serial_instance.close()
                     break 
 
                 #sprawdzam timeout 
                 if (int(round(time.time())) - timeout_start_time) > 10:
-                        window['-out_info-'].update("Brak danych BLS")
+                        if ui_en:
+                            window['-out_info-'].update("Brak danych BLS")
                         serial_instance.close()
                         break
 
             elif data == b'':
                 #timeout#3
-                window['-out_info-'].update("Timeout!")
+                if ui_en:
+                    window['-out_info-'].update("Timeout!")
                 serial_instance.close()
                 break
         
     except:
         print("dupa blada")
     serial_instance.close()
+
+
+def read_info_window(window, values):
+    #print(values['-combo_port-'])
+    if values['-combo_port-'] == "":
+        window['-out_info-'].update("Wybierz port COM")
+        return
+
+    rst = values['-checkbox_RST-']
+    com = values['-combo_port-']
+    baud = values['-combo_baud-']
+    info_output = read_info(com, baud, rst, window, values, ui_en = True)
+    #window['-out_info-'].update(info_output)
+    # try:
+    #     serial_instance = serial.serial_for_url(
+    #         values['-combo_port-'],
+    #         int(values['-combo_baud-']),
+    #         parity="N",
+    #         rtscts=False,
+    #         xonxoff=False,
+    #         do_not_open=True,
+    #         timeout = 10    #timeout read 10s
+    #         )
+    #     print("debug1")
+
+    #     if isinstance(serial_instance, serial.Serial):
+    #         serial_instance.exclusive = True #args.exclusive    #disable looking for native ports
+    #     print("debug2")
+
+    #     serial_instance.open()
+    #     print("debug3")
+    # except serial.SerialException as e:
+    #     sys.stderr.write('could not open port {!r}: {}\n'.format(values['-combo_port-'], e))
+    #     window['-out_info-'].update("Nie mozna otworzyc portu COM")
+
+    # #oczekiwanie na znak zapytania z procesora 
+
+    # if values['-checkbox_RST-']:
+    #     serial_instance.write(b'AT+RST?\r\n')
+    #     serial_instance.reset_input_buffer()
+
+    # data_ack = 0
+    # timeout_start_time = int(round(time.time()))
+    # while True:   
+    #     data = serial_instance.read(serial_instance.in_waiting or 1)
+    #     print(data, type(data))
+    #     input_raw_data = ""
+    #     if data:
+    #         input_raw_data =  input_raw_data + data.decode("utf-8",errors='ignore')
+    #         try:
+    #             data_table = re.search(r'.*\?.*', input_raw_data)
+    #             if data_table:
+    #                 data_ack = 1
+    #                 print(data_ack)
+                    
+    #         except:
+    #             print("dupa")
+
+    #         if data_ack == 1:
+    #             try:
+    #                 #serial_instance.write(b'AT+RST?\r\n')
+    #                 #time.sleep(0.1)
+    #                 serial_instance.write(b'u')
+    #                 time.sleep(0.1)
+    #                 serial_instance.write(b'i')
+    #                 break
+    #             except:
+    #                 window['-out_info-'].update("Problem z połączeniem")
+    #                 serial_instance.close()
+    #                 return
+    #     if (int(round(time.time())) - timeout_start_time) > 10:
+    #         window['-out_info-'].update("Brak danych BLS")
+    #         serial_instance.close()
+    #         break
+
+    # input_raw_data = ""
+    # output_tekst= ""
+    # timeout_start_time = int(round(time.time()))
+    # try:
+    #     #time_start = time.read()
+    #    # print(time_start)
+    #     while True:
+    #     # read all that is there or wait for one byte
+    #         data = serial_instance.read(serial_instance.in_waiting or 1)
+    #         print(data, type(data))
+    #         if data:
+    #             input_raw_data =  input_raw_data + data.decode("utf-8") #str(data)
+    #             print(input_raw_data)
+    #             try:
+    #                 data_table = re.search(r'\?*&(\d+),0x([0-9a-fA-F]+),([0-9a-zA-Z]+),(\d+),(\d+)\*', input_raw_data)
+    #                 #parsuj regexa
+    #                 if data_table != None:
+    #                     global info_output
+    #                     global cpu_flash_size
+    #                     global page_size
+    #                     info_output = "Page size: " + str(data_table.group(1)) + "\n"
+    #                     info_output = info_output + "Flash size: " + str(data_table.group(2)) + "\n"
+    #                     info_output = info_output + "CPU name: " + str(data_table.group(3)) + "\n"
+    #                     info_output = info_output + "CPU frequency: " + str(data_table.group(4)) + "\n"
+    #                     info_output = info_output + "BLS Version: " + str(data_table.group(5)) + "\n"
+    #                     window['-out_info-'].update(info_output)
+    #                     serial_instance.close()
+    #                     cpu_flash_size = int(data_table.group(2), 16)
+    #                     page_size = int(data_table.group(1))
+    #                     break
+    #             except:
+    #                 window['-out_info-'].update("Niepoprawne dane BLS")
+    #                 serial_instance.close()
+    #                 break 
+
+    #             #sprawdzam timeout 
+    #             if (int(round(time.time())) - timeout_start_time) > 10:
+    #                     window['-out_info-'].update("Brak danych BLS")
+    #                     serial_instance.close()
+    #                     break
+
+    #         elif data == b'':
+    #             #timeout#3
+    #             window['-out_info-'].update("Timeout!")
+    #             serial_instance.close()
+    #             break
+        
+    # except:
+    #     print("dupa blada")
+    # serial_instance.close()
 
 def upload_program(window, values):
     global flash_file_content
@@ -350,12 +499,17 @@ def read_upload(window, values):
 
 def read_threading(window, values):
     global thread_lock
-    read_info(window, values)
+    read_info_window(window, values)
     thread_lock = False
    
 
 
 def main():
+    #tryb konsolowy
+
+
+
+    #tryb graficzny
     # Create the Window
     window = sg.Window('Window Title', layout)
     global flash_file_content
@@ -399,7 +553,7 @@ def main():
             # upload_program(window, values)
 
         if event == '-open_file_key-':
-            load_file(window, values)
+            load_file_window(window, values)
             threading.Thread(target=the_thread, args=(window, values,), daemon=True).start()
 
         # if flag == 1:
