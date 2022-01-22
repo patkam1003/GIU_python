@@ -153,7 +153,7 @@ def read_info(com, baud, rst, window = None, values = None):
     timeout_start_time = int(round(time.time()))
     while True:   
         data = serial_instance.read(serial_instance.in_waiting or 1)
-        print(data, type(data))
+        print("[read_info] data: ",data, type(data))
         input_raw_data = ""
         if data:
             try:
@@ -161,7 +161,7 @@ def read_info(com, baud, rst, window = None, values = None):
                 data_table = re.search(r'.*\?.*', input_raw_data)
                 if data_table:
                     data_ack = 1
-                    print(data_ack, "[read_info] odebrano znak zapytania")
+                    print("[read_info] odebrano znak zapytania")
                     
             except:
                 print("[read_info]"," Znak zapytania nie odebrany")
@@ -198,10 +198,10 @@ def read_info(com, baud, rst, window = None, values = None):
         while True:
         # read all that is there or wait for one byte
             data = serial_instance.read(serial_instance.in_waiting or 1)
-            print(data, type(data))
+            print("[read_info] data: ", data, type(data))
             if data:
                 input_raw_data =  input_raw_data + data.decode("utf-8",errors='ignore') #str(data)
-                print(input_raw_data)
+                print("[read_info] odebrano: ",input_raw_data)
                 try:
                     data_table = re.search(r'\?*&(\d+),0x([0-9a-fA-F]+),([0-9a-zA-Z]+),(\d+),(\d+)\*', input_raw_data)
                     #parsuj regexa
@@ -262,6 +262,7 @@ def read_info_window(window, values):
 
 
 def upload_program(com, baud, window = None, values = None):
+    print("[upload_program]start ")
     global flash_file_content
     global page_size
     global cpu_flash_size
@@ -269,12 +270,14 @@ def upload_program(com, baud, window = None, values = None):
     data_sent_cnt = 0
 
     if not flash_file_content:
+        print("[upload_program] Brak pliku ")
         if window:
             window['-out_info-'].update("Wybierz plik flash")
         return
 
     print(file_size/2,cpu_flash_size)
     if file_size/2 > cpu_flash_size:
+        print("[upload_program] Procesor jest za mały ")
         if window:
             window['-out_info-'].update("Procesor jest za maly")
         return
@@ -300,6 +303,7 @@ def upload_program(com, baud, window = None, values = None):
             print("[upload_program]","otwarcie portu ok")
         except serial.SerialException as e:
             sys.stderr.write('could not open port {!r}: {}\n'.format(com, e))
+            print("[upload_program] Nie można otworzyć portu ")
             if window:
                 window['-out_info-'].update("Nie mozna otworzyc portu COM")
 
@@ -313,16 +317,16 @@ def upload_program(com, baud, window = None, values = None):
 
             while True:
                 data = serial_instance.read(serial_instance.in_waiting or 1)
-                print(data, type(data))
+                print("[upload_program] data: ", data, type(data))
                 input_raw_data = ""
                 if data:
                     input_raw_data = input_raw_data + data.decode("utf-8",errors='ignore') # str(data)
-                    print(input_raw_data)
+                    print("[upload_program] odebrano: ", input_raw_data)
                     try:
                         data_table = re.search(r'.*@.*', input_raw_data)
                         if data_table != None:
                             data_ack = 1
-                            print(data_ack)
+                            print("[upload_program] odebrano małpę ",data_ack)
                             timeout_start_time = int(round(time.time()))
                             #zakonczenie ladowania
                             if data_sent_cnt >= file_size:
@@ -330,7 +334,8 @@ def upload_program(com, baud, window = None, values = None):
                                 # while serial_instance.out_waiting >0:
                                 #     print("teeeest")
                                 #     pass
-                                time.sleep(2)
+                                #time.sleep(2)
+                                print("[upload_program]  DONE")
                                 if window:
                                     window['-out_info-'].print("\r\nDONE")
                                 serial_instance.close()
@@ -368,6 +373,8 @@ def upload_program(com, baud, window = None, values = None):
                     #timeout#3
                     if window:
                         window['-out_info-'].update("Timeout!")
+
+                    print("[upload_program]","Timeout, odbieranie pustych wiadomosci")
                     serial_instance.close()
                     break
 
@@ -402,60 +409,150 @@ def read_threading(window, values):
 
 
 def main():
-    #tryb konsolowy
-
-
-
-    #tryb graficzny
-    # Create the Window
-    window = sg.Window('Window Title', layout)
+    print("[main] Start")
     global flash_file_content
     global page_size
     global cpu_flash_size
     global flag
     global thread_lock
-    flash_file_content = ""
-    com_port_uchwyt = None
-    miniterminal = None
-    
-    # Event Loop to process "events" and get the "values" of the inputs
-    while True:
-        event, values = window.read()
-        print(event)
-        if event == sg.WIN_CLOSED: # if user closes window or clicks cancel
-            print("zamkniecie programu", event)
-            break
+    if len(sys.argv) > 1:
 
-        #elif event == '-open_file_key-':
+        #tryb konsolowy
+        print("[main] Tryb konsolowy")
+        # print('ARGV      :', sys.argv[1:], len(sys.argv))
 
-        elif event == "-combo_port-":
-            window['-COM_name-'].update("COM: " + ask_for_desc(values["-combo_port-"]))
+        baud = None
+        com = None
+        filename = None
+        upload = False
+        reset = False
+        hhelp = False
+        p = False
+        d = False
+        options, remainder = getopt.getopt(sys.argv[1:], 'uf:b:c:rpdh', ['update','file=','baudrate=','com=','reset','port','debug','help',])
+
+        for opt, arg in options:
+            if opt in ('-u', '--update'):
+                upload = True
+            elif opt in ('-f', '--file'):
+                filename = pathlib.Path(arg).resolve()
+            elif opt in ('-b', '--baudrate'):
+                try:
+                    baud = int(arg)
+                except:
+                    print("Invalid parameter type (-b)(expected number)")
+                    return
+                if arg == None: 
+                    return -1
+            elif opt in ('-c', '--com'):
+                com = arg
+                if arg == None: 
+                    return -1             
+            elif opt in ('-r', '--reset'):
+                reset = True
+            elif opt in ('-p', '--port'):
+                p = True
+            elif opt in ('-d', '--debug'):
+                d = True
+            elif opt in ('-h', '--help'):
+                hhelp = True
+        if p:
+            for port in ask_for_port():
+                print(port, ask_for_desc(port))    
+            return
+        if upload:
+            # update
+
+            #baud: sprawdzic czy wartosc jest tylko liczba
+            if not baud:
+                print("Baud is required")
+                return
+
+            #com sprawdzic czy com istnieje w systemie
+            if com:
+                if not (com in ask_for_port()):
+                    for port in ask_for_port():
+                        print(port, ask_for_desc(port)) 
+                    print("COM port is required")   
+                    return
+
+            #file sprawdzic rozszerzenie i czy da sie otworzyc
+            if filename:
+                if not os.path.isfile(filename):
+                    print("File not exists")
+                    return
+                if not (pathlib.Path(filename).suffix.lower() in ('.bin','.hex')):
+                    print("File type incorrect (exp bin or hex)")
+                    return
+
+            flash_file_content =  load_file(filename)
+            read_info(com, baud, reset)
+            upload_program(com, baud)
+
+        else:
+            if not baud:
+                print("Baud is required")
+                return
+
+            #com sprawdzic czy com istnieje w systemie
+            if com:
+                if not (com in ask_for_port()):
+                    for port in ask_for_port():
+                        print(port, ask_for_desc(port)) 
+                    print("COM port is required")   
+                    return
+            read_info(com, baud, reset)
 
 
-        elif event == "-info_key-":
-            # read_info(window, values)
-            if thread_lock == False:
-                thread_lock = True
-                threading.Thread(target=read_threading, args=(window, values,), daemon=True).start()
-                print("tthread_info")
-            else:
-                print("thread_true_info")
-            #print(cpu_flash_size, page_size)
-        elif event == "-upload_key-":
-            if thread_lock == False:
-                thread_lock = True
-                threading.Thread(target=read_upload, args=(window, values,), daemon=True).start()
-                print("tthread")
-            else:
-                print("thread_true")
-            # upload_program(window, values)
+    else:
 
-        if event == '-open_file_key-':
-            load_file_window(window, values)
-            threading.Thread(target=the_thread, args=(window, values,), daemon=True).start()
+        #tryb graficzny
+        # Create the Window
+        window = sg.Window('Window Title', layout)
 
-    window.close()
-    return 0
+        flash_file_content = ""
+        com_port_uchwyt = None
+        miniterminal = None
+        
+        # Event Loop to process "events" and get the "values" of the inputs
+        while True:
+            event, values = window.read()
+            print(event)
+            if event == sg.WIN_CLOSED: # if user closes window or clicks cancel
+                print("zamkniecie programu", event)
+                break
+
+            #elif event == '-open_file_key-':
+
+            elif event == "-combo_port-":
+                window['-COM_name-'].update("COM: " + ask_for_desc(values["-combo_port-"]))
+
+
+            elif event == "-info_key-":
+                # read_info(window, values)
+                if thread_lock == False:
+                    thread_lock = True
+                    threading.Thread(target=read_threading, args=(window, values,), daemon=True).start()
+                    print("[main] wciśnieto info, thread start")
+                else:
+                    print("[main] wciśnieto info, thread true - zablokowane")
+                #print(cpu_flash_size, page_size)
+            elif event == "-upload_key-":
+                if thread_lock == False:
+                    thread_lock = True
+                    threading.Thread(target=read_upload, args=(window, values,), daemon=True).start()
+                    print("[main] wciśnieto upload, thread start")
+                else:
+                    print("[main] wciśnieto upload, thread true - zablokowane")
+                # upload_program(window, values)
+
+            if event == '-open_file_key-':
+                load_file_window(window, values)
+                threading.Thread(target=the_thread, args=(window, values,), daemon=True).start()
+                print("[main] wciśnieto open file, thread start")
+
+        window.close()
+        return 0
 
 
 if __name__ == '__main__':
