@@ -55,6 +55,7 @@ cpu_flash_size = 0
 page_size = 0
 flag = 0
 thread_lock = False
+serial_instance = None
 
 
 def load_file(filename):
@@ -116,6 +117,7 @@ def the_thread(window, values):
 # def the_thread_upload(window, values):
 
 def read_info(com, baud, rst, window = None, values = None):
+    global serial_instance
     #print(values['-combo_port-'])
     # if values['-combo_port-'] == "":
     #     window['-out_info-'].update("Wybierz port COM")
@@ -217,7 +219,7 @@ def read_info(com, baud, rst, window = None, values = None):
                         if window:
                             window['-out_info-'].update(info_output)
 
-                        serial_instance.close()
+                        #serial_instance.close()
                         cpu_flash_size = int(data_table.group(2), 16)
                         page_size = int(data_table.group(1))
                         return info_output
@@ -246,7 +248,7 @@ def read_info(com, baud, rst, window = None, values = None):
         
     except:
         print("[read_info]","Czytanie info nie zadziałało")
-    serial_instance.close()
+    # serial_instance.close()
 
 
 def read_info_window(window, values):
@@ -261,11 +263,13 @@ def read_info_window(window, values):
     info_output = read_info(com, baud, rst, window, values)
 
 
+
 def upload_program(com, baud, window = None, values = None):
     print("[upload_program]start ")
     global flash_file_content
     global page_size
     global cpu_flash_size
+    global serial_instance
     file_size = len(flash_file_content)
     data_sent_cnt = 0
 
@@ -283,32 +287,32 @@ def upload_program(com, baud, window = None, values = None):
         return
 
     if (page_size != 0) and (cpu_flash_size != 0):
-        try:
-            serial_instance = serial.serial_for_url(
-                com,
-                int(baud),
-                parity="N",
-                rtscts=False,
-                xonxoff=False,
-                do_not_open=True,
-                timeout = 10    #timeout read 10s
-                )
-            print("[upload_program]","Parametry serial ok")
+        # try:
+        #     serial_instance = serial.serial_for_url(
+        #         com,
+        #         int(baud),
+        #         parity="N",
+        #         rtscts=False,
+        #         xonxoff=False,
+        #         do_not_open=True,
+        #         timeout = 10    #timeout read 10s
+        #         )
+        #     print("[upload_program]","Parametry serial ok")
 
-            if isinstance(serial_instance, serial.Serial):
-                serial_instance.exclusive = True #args.exclusive    #disable looking for native ports
-                print("[upload_program]","debug2")
+        #     if isinstance(serial_instance, serial.Serial):
+        #         serial_instance.exclusive = True #args.exclusive    #disable looking for native ports
+        #         print("[upload_program]","debug2")
 
-            serial_instance.open()
-            print("[upload_program]","otwarcie portu ok")
-        except serial.SerialException as e:
-            sys.stderr.write('could not open port {!r}: {}\n'.format(com, e))
-            print("[upload_program] Nie można otworzyć portu ")
-            if window:
-                window['-out_info-'].update("Nie mozna otworzyc portu COM")
+        #     serial_instance.open()
+        #     print("[upload_program]","otwarcie portu ok")
+        # except serial.SerialException as e:
+        #     sys.stderr.write('could not open port {!r}: {}\n'.format(com, e))
+        #     print("[upload_program] Nie można otworzyć portu ")
+        #     if window:
+        #         window['-out_info-'].update("Nie mozna otworzyc portu COM")
 
         #Ładowanie Programu
-
+        print("[upload_program] start, ", serial_instance)
         try:
             serial_instance.write(b'w')
             status = 0
@@ -323,8 +327,8 @@ def upload_program(com, baud, window = None, values = None):
                     input_raw_data = input_raw_data + data.decode("utf-8",errors='ignore') # str(data)
                     print("[upload_program] odebrano: ", input_raw_data)
                     try:
-                        data_table = re.search(r'.*@.*', input_raw_data)
-                        if data_table != None:
+                        data_table = re.search(r'(.*@.*)|(.*\?.*)', input_raw_data)
+                        if data_table.group(1) != None:
                             data_ack = 1
                             print("[upload_program] odebrano małpę ",data_ack)
                             timeout_start_time = int(round(time.time()))
@@ -340,6 +344,8 @@ def upload_program(com, baud, window = None, values = None):
                                     window['-out_info-'].print("\r\nDONE")
                                 serial_instance.close()
                                 return
+                        elif data_table.group(2) != None:
+                            serial_instance.write(b'w')
                     except:
                         print("[upload_program]","Nie wysłano programu, procesor nie wysyła @")
 
@@ -380,6 +386,8 @@ def upload_program(com, baud, window = None, values = None):
 
         except:
             print("[upload_program]","ładowanie programu poszło nie tak")
+        #koniec programu 
+        serial_instance.close()
 
     else:
         return
@@ -404,17 +412,20 @@ def read_upload(window, values):
 def read_threading(window, values):
     global thread_lock
     read_info_window(window, values)
+    global serial_instance
+    serial_instance.close()
     thread_lock = False
    
 
 
 def main():
-    print("[main] Start")
+    print("[main] Start, version V1.0")
     global flash_file_content
     global page_size
     global cpu_flash_size
     global flag
     global thread_lock
+    global serial_instance
     if len(sys.argv) > 1:
 
         #tryb konsolowy
@@ -436,6 +447,7 @@ def main():
                 upload = True
             elif opt in ('-f', '--file'):
                 filename = pathlib.Path(arg).resolve()
+                print("filename: ",filename)
             elif opt in ('-b', '--baudrate'):
                 try:
                     baud = int(arg)
@@ -502,6 +514,7 @@ def main():
                     print("COM port is required")   
                     return
             read_info(com, baud, reset)
+            serial_instance.close()
 
 
     else:
